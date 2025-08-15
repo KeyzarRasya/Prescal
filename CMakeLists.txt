@@ -7,6 +7,7 @@ set (
     SOURCES
     main.c
     src/engine.c
+    src/configuration.c
     ds/linkedlist.c
 )
 
