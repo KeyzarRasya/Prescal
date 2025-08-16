@@ -1,3 +1,6 @@
+#define _POSIX_C_SOURCE 200809L
+#include <stddef.h>
+#include "../include/http.h"
 #include "../include/engine.h"
 #include <sys/socket.h>
 #include <stdio.h>
@@ -67,14 +70,46 @@ void start(struct prescal_engine *engine) {
     printf("Listening...\n");
     while(1) {
         int c = accept(fd, (struct sockaddr*)&client_addr, &client_len);
-        recv(c, buff, sizeof(buff), 0);
-        send(c, response, strlen(response), 0);
-        printf("%s\n", buff);
+        process_request(c);
         close(c);
     }
 
     close(fd);
     printf("Success");
     return;
+}
+
+void process_request(int fd) {
+    char req[1024];
+    char *res = 
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/plain\r\n"
+    "Content-Length: 13\r\n"
+    "\r\n"
+    "Hello, World!";
+    int n = recv(fd, req, sizeof(req), 0);
+    if (n < 0) {
+        perror("Failed to receive request");
+        return;
+    }
+
+    req[n] = '\0';
+    send(fd, res, strlen(res), 0);
+    printf("%s\n", req);
+    char endpoint[256];
+    get_endpoint(req, endpoint, sizeof(endpoint));
+    struct http_req *hreq = http_req_init();
+    extract_req(hreq, strdup(endpoint));
+    req_to_string(hreq);
+    free(hreq);
+}
+
+void get_endpoint(const char *src, char *out, size_t size) {
+    int i = 0;
+    while (src[i] != '\n' && i < size - 1) {
+        out[i] = src[i];
+        i++;
+    }
+    out[i] = '\0';
 }
 
