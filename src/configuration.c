@@ -28,12 +28,10 @@ struct prescal_config *config_init(void) {
 }
 
 void trim(char *str) {
-    // Hilangkan spasi depan
     char *start = str;
     while (isspace((unsigned char)*start)) start++;
     memmove(str, start, strlen(start) + 1);
 
-    // Hilangkan spasi belakang
     char *end = str + strlen(str) - 1;
     while (end > str && isspace((unsigned char)*end)) *end-- = '\0';
 }
@@ -51,9 +49,8 @@ void read_config(struct prescal_config *config) {
     while (fgets(line, sizeof(line), fp)) {
         trim(line);
 
-        if (strlen(line) == 0) continue; // skip baris kosong
+        if (strlen(line) == 0) continue; 
 
-        // Jika line mulai dengan '-'
         if (parsing_forwards && line[0] == '-') {
             char *value = line + 1;
             trim(value);
@@ -61,7 +58,6 @@ void read_config(struct prescal_config *config) {
             continue;
         }
 
-        // Parsing key: value
         char *colon = strchr(line, ':');
         if (!colon) continue;
 
