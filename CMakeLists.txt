@@ -7,6 +7,8 @@ set (
     SOURCES
     main.c
     src/engine.c
+    src/dclient.c
+    src/http.c
     src/configuration.c
     ds/linkedlist.c
 )
