@@ -4,6 +4,14 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define ON_SOCK_ERR \
+    "HTTP/1.1 502 Bad Gateway\r\n" \
+    "Content-Type: text/plain\r\n" \
+    "Content-Length: 14\r\n" \
+    "\r\n" \
+    "Socket Failure"
+
+
 struct prescal_engine{
     char *host;
     uint16_t port;
@@ -13,6 +21,6 @@ struct prescal_engine{
 struct prescal_engine *engine_init(char *host, uint16_t port);
 void start(struct prescal_engine *engine);
 void process_request(int fd);
-void get_endpoint(const char *src, char *out, size_t size);
+void forwards(const char *request, char *http_response, size_t size);
 
 #endif
