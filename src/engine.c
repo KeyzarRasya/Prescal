@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include <time.h>
 #include <stddef.h>
 #include "../include/http.h"
 #include "../include/engine.h"
@@ -9,6 +10,13 @@
 #include <arpa/inet.h>
 #include <stdlib.h>
 #include <string.h>
+
+char *res = 
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/plain\r\n"
+    "Content-Length: 13\r\n"
+    "\r\n"
+    "Hello, World!";
 
 struct prescal_engine *engine_init(char *host, uint16_t port) {
     struct prescal_engine *engine = 
@@ -28,15 +36,6 @@ void start(struct prescal_engine *engine) {
 
     struct sockaddr_in server_addr, client_addr;
     int fd;
-
-    const char *response =
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: text/plain\r\n"
-    "Content-Length: 13\r\n"
-    "\r\n"
-    "Hello, World!";
-
-    char buff[1024];
 
     fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd == -1) {
@@ -80,36 +79,60 @@ void start(struct prescal_engine *engine) {
 }
 
 void process_request(int fd) {
+    struct timespec start, end;
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
     char req[1024];
-    char *res = 
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: text/plain\r\n"
-    "Content-Length: 13\r\n"
-    "\r\n"
-    "Hello, World!";
+    char response[1024];
+    struct http_req *hreq = http_req_init();
+
     int n = recv(fd, req, sizeof(req), 0);
     if (n < 0) {
         perror("Failed to receive request");
+        free(hreq);
         return;
     }
-
     req[n] = '\0';
-    send(fd, res, strlen(res), 0);
-    printf("%s\n", req);
-    char endpoint[256];
-    get_endpoint(req, endpoint, sizeof(endpoint));
-    struct http_req *hreq = http_req_init();
-    extract_req(hreq, strdup(endpoint));
+    convert_request(hreq, req, sizeof(req));
+    forwards(req, response, sizeof(response));
     req_to_string(hreq);
+
+    send(fd, response, strlen(response), 0);
+
+
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double elapsed = (end.tv_sec - start.tv_sec) +
+                     (end.tv_nsec - start.tv_nsec) / 1e9;
+
+    printf("Elapsed time: %.6f seconds\n", elapsed);
+    
     free(hreq);
 }
 
-void get_endpoint(const char *src, char *out, size_t size) {
-    int i = 0;
-    while (src[i] != '\n' && i < size - 1) {
-        out[i] = src[i];
-        i++;
-    }
-    out[i] = '\0';
-}
+void forwards(const char *request, char *http_response, size_t size) {
+    int fd;
+    struct sockaddr_in server;
 
+    server.sin_family = AF_INET;
+    server.sin_port = htons(3000);
+    inet_pton(AF_INET, "127.0.0.1", &server.sin_addr);
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (fd < 0) {
+        http_response = strdup(ON_SOCK_ERR);
+        close(fd);
+        return;
+    }
+
+    if (connect(fd, (struct sockaddr*)&server, sizeof(server)) < 0) {
+        http_response = strdup(ON_SOCK_ERR);
+        close(fd);
+        return;
+    }
+
+    send(fd, request, strlen(request), 0);
+    recv(fd, http_response, size, 0);
+
+    close(fd);
+}
