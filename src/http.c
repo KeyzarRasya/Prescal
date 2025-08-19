@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "../include/http.h"
@@ -20,8 +21,14 @@ struct http_req *http_req_init() {
     return http;
 }
 
-void extract_req(struct http_req *hreq, char *req) {
-    char *token = strtok(req, " ");
+void convert_request(struct http_req *hreq, const char *request, size_t size) {
+    char endpoint_info[255];
+    get_endpoint_info(request, endpoint_info, sizeof(endpoint_info));
+    extract_req(hreq, endpoint_info);
+}
+
+void extract_req(struct http_req *hreq, char *endpoint_info) {
+    char *token = strtok(endpoint_info, " ");
     if (token) hreq->method = strdup(token);
     
     token = strtok(NULL, " ");
@@ -29,8 +36,15 @@ void extract_req(struct http_req *hreq, char *req) {
 
     token = strtok(NULL, " ");
     if (token) hreq->http_v = strdup(token);
+}
 
-    return hreq;
+void get_endpoint_info(const char *src, char *out, size_t size) {
+    int i = 0;
+    while (src[i] != '\n' && i < size - 1) {
+        out[i] = src[i];
+        i++;
+    }
+    out[i] = '\0';
 }
 
 void req_to_string(struct http_req *hreq) {
