@@ -18,13 +18,15 @@ struct http_req *http_req_init() {
     http->method = NULL;
     http->path = NULL;
     http->http_v = NULL;
+    http->raw = NULL;
     return http;
 }
 
 void convert_request(struct http_req *hreq, const char *request, size_t size) {
     char endpoint_info[255];
+    hreq->raw = strdup(request);
     get_endpoint_info(request, endpoint_info, sizeof(endpoint_info));
-    extract_req(hreq, endpoint_info);
+    extract_req(hreq, endpoint_info);    
 }
 
 void extract_req(struct http_req *hreq, char *endpoint_info) {
@@ -45,6 +47,14 @@ void get_endpoint_info(const char *src, char *out, size_t size) {
         i++;
     }
     out[i] = '\0';
+}
+
+void http_req_clean(struct http_req *hreq) {
+    free(hreq->http_v);
+    free(hreq->method);
+    free(hreq->path);
+    free(hreq->raw);
+    free(hreq);
 }
 
 void req_to_string(struct http_req *hreq) {
