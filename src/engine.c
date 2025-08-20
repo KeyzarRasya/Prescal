@@ -10,13 +10,63 @@
 #include <arpa/inet.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <stdatomic.h>
+#include "timer.h"
 
-char *res = 
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: text/plain\r\n"
-    "Content-Length: 13\r\n"
-    "\r\n"
-    "Hello, World!";
+#define DEBUG 0
+
+atomic_int rps = ATOMIC_VAR_INIT(0);
+
+void *request_per_second() {
+    while(1) {
+        sleep_ms(1000);
+        int current_rps = atomic_exchange(&rps, 0);
+        printf("RPS : %d\n", current_rps);
+    }
+}
+
+int handle_request(int fd, struct http_req *hreq) {
+    char request[MAX_BUFF_SIZE];
+    int n = recv(fd, request, sizeof(request), 0);
+    if (n < 0) {
+        perror("Failed to receive request");
+        return -1;
+    }
+    request[n] = '\0';
+    convert_request(hreq, request, sizeof(request));
+    return 0;
+}
+
+void handle_response(int fd, struct http_req *hreq) {
+    char response[MAX_BUFF_SIZE];
+    if (forwards(hreq->raw, response, sizeof(response)) != 0) {
+        snprintf(response, sizeof(response), "%s", ON_SOCK_ERR);
+    }
+    send(fd, response, sizeof(response), 0);
+}
+
+void log_elapsed_time(struct timespec start, struct timespec end) {
+    double elapsed = (end.tv_sec - start.tv_sec) +
+                     (end.tv_nsec - start.tv_nsec) / 1e9;
+    int request = atomic_load(&rps);
+    printf("Elapsed time: %0.6f\n", elapsed);
+}
+
+int connect_to_server(int fd) {
+    int port = 3000 + (rand() % 3);
+    struct sockaddr_in destiny = {
+        .sin_family = AF_INET,
+        .sin_port = htons(port)
+    };
+    inet_pton(AF_INET, "127.0.0.1", &destiny.sin_addr);
+
+    if (connect(fd, (struct sockaddr*)&destiny, sizeof(destiny)) < 0) {
+        perror("Failed while connecting to server");
+        return -1;
+    }
+    return 0;
+}
 
 struct prescal_engine *engine_init(char *host, uint16_t port) {
     struct prescal_engine *engine = 
@@ -26,15 +76,19 @@ struct prescal_engine *engine_init(char *host, uint16_t port) {
         perror("Failed to allocate engine");
         return NULL;
     }
-
     engine->host = host;
     engine->port = port;
+    engine->config = config_init();
+
+    read_config(engine->config);
     return engine;
 }
 
 void start(struct prescal_engine *engine) {
+    struct sockaddr_in client_addr;
+    pthread_t rps_reset_thread;
 
-    struct sockaddr_in server_addr, client_addr;
+    pthread_create(&rps_reset_thread, NULL, request_per_second, NULL);
     int fd;
 
     fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -43,9 +97,11 @@ void start(struct prescal_engine *engine) {
         return;
     }
 
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(engine->port);
-    server_addr.sin_addr.s_addr = INADDR_ANY;
+    struct sockaddr_in server_addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(engine->config->port),
+        .sin_addr.s_addr = INADDR_ANY
+    };
 
     int enable = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) == -1) {
@@ -66,7 +122,7 @@ void start(struct prescal_engine *engine) {
     }
     socklen_t client_len = sizeof(struct sockaddr_in);
 
-    printf("Listening...\n");
+    printf("Listening on port %d\n", engine->config->port);
     while(1) {
         int c = accept(fd, (struct sockaddr*)&client_addr, &client_len);
         process_request(c);
@@ -74,65 +130,54 @@ void start(struct prescal_engine *engine) {
     }
 
     close(fd);
-    printf("Success");
     return;
 }
 
 void process_request(int fd) {
     struct timespec start, end;
-
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    char req[1024];
-    char response[1024];
     struct http_req *hreq = http_req_init();
+    atomic_fetch_add(&rps, 1);
 
-    int n = recv(fd, req, sizeof(req), 0);
-    if (n < 0) {
-        perror("Failed to receive request");
+    if (handle_request(fd, hreq) != 0) {
         free(hreq);
         return;
     }
-    req[n] = '\0';
-    convert_request(hreq, req, sizeof(req));
-    forwards(req, response, sizeof(response));
-    req_to_string(hreq);
 
-    send(fd, response, strlen(response), 0);
-
-
+    handle_response(fd, hreq);
     clock_gettime(CLOCK_MONOTONIC, &end);
-    double elapsed = (end.tv_sec - start.tv_sec) +
-                     (end.tv_nsec - start.tv_nsec) / 1e9;
 
-    printf("Elapsed time: %.6f seconds\n", elapsed);
+    #if DEBUG
+        log_elapsed_time(start, end);
+    #endif
     
     free(hreq);
 }
 
-void forwards(const char *request, char *http_response, size_t size) {
+int forwards(const char *request, char *http_response, size_t size) {
     int fd;
-    struct sockaddr_in server;
-
-    server.sin_family = AF_INET;
-    server.sin_port = htons(3000);
-    inet_pton(AF_INET, "127.0.0.1", &server.sin_addr);
     fd = socket(AF_INET, SOCK_STREAM, 0);
 
     if (fd < 0) {
-        http_response = strdup(ON_SOCK_ERR);
         close(fd);
-        return;
+        return -1;
     }
 
-    if (connect(fd, (struct sockaddr*)&server, sizeof(server)) < 0) {
-        http_response = strdup(ON_SOCK_ERR);
+    if (connect_to_server(fd) != 0) {
         close(fd);
-        return;
+        return -1;
     }
 
     send(fd, request, strlen(request), 0);
     recv(fd, http_response, size, 0);
 
     close(fd);
+    return 0;
+}
+
+void destroy_engine(struct prescal_engine *engine) {
+    free(engine->config->forwards);
+    free(engine->config);
+    free(engine);
 }
