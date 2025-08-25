@@ -10,6 +10,8 @@ set (
     src/dclient.c
     src/http.c
     src/configuration.c
+    src/timer.c
+    src/metrics.c
     ds/linkedlist.c
 )
 
