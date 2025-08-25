@@ -56,7 +56,8 @@ void *request_per_second() {
     return NULL;
 }
 
-int handle_request(int fd, struct http_req *hreq) {
+/* Static Function */
+static int handle_request(int fd, struct http_req *hreq) {
     char request[MAX_BUFF_SIZE];
     int n = recv(fd, request, sizeof(request), 0);
     if (n < 0) {
@@ -68,7 +69,7 @@ int handle_request(int fd, struct http_req *hreq) {
     return 0;
 }
 
-void handle_response(int fd, struct http_req *hreq) {
+static void handle_response(int fd, struct http_req *hreq) {
     char response[MAX_BUFF_SIZE];
     if (forwards(hreq->raw, response, sizeof(response)) != 0) {
         snprintf(response, sizeof(response), "%s", ON_SOCK_ERR);
@@ -82,7 +83,7 @@ void log_elapsed_time(struct timespec start, struct timespec end) {
     printf("Elapsed time: %0.6f\n", elapsed);
 }
 
-int connect_to_server(int fd) {
+static int connect_to_server(int fd) {
     int port = 3000 + (rand() % 3);
     struct sockaddr_in destiny = {
         .sin_family = AF_INET,
@@ -96,6 +97,50 @@ int connect_to_server(int fd) {
     }
     return 0;
 }
+
+void init_listener(int fd, struct prescal_engine *engine) {
+    struct sockaddr_in server = {
+        .sin_family = AF_INET,
+        .sin_port = htons(engine->port),
+        .sin_addr = INADDR_ANY
+    };
+    
+    int enable = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
+        perror("socket option");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (bind(fd, (struct sockaddr*)&server, sizeof(server)) < 0) {
+        perror("bind");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (listen(fd, SOMAXCONN) < 0) {
+        perror("listen");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+}
+
+void handle_connections(int fd) {
+    struct sockaddr_in client;
+    socklen_t client_size = sizeof(client);
+    while (1) {
+        int conn = accept(fd, (struct sockaddr*)&client, &client_size);
+        if (conn < 0) {
+            perror("accept");
+            continue;
+        }
+        process_request(conn);
+        close(conn);
+    }
+}
+/* END */
+
 
 struct prescal_engine *engine_init(char *host, uint16_t port) {
     struct prescal_engine *engine = 
@@ -126,37 +171,8 @@ void start(struct prescal_engine *engine) {
         return;
     }
 
-    struct sockaddr_in server_addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(engine->config->port),
-        .sin_addr.s_addr = INADDR_ANY
-    };
-
-    int enable = 1;
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) == -1) {
-        close(fd);
-        perror("Failed to set socket options");
-        exit(EXIT_FAILURE);
-    }
-
-    if (bind(fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
-        close(fd);
-        perror("Failed to bind address");
-        return;
-    }
-
-    if (listen(fd, 5) == -1) {
-        perror("failed to listen");
-        return;
-    }
-    socklen_t client_len = sizeof(struct sockaddr_in);
-
-    printf("Listening on port %d\n", engine->config->port);
-    while(1) {
-        int c = accept(fd, (struct sockaddr*)&client_addr, &client_len);
-        process_request(c);
-        close(c);
-    }
+    init_listener(fd, engine);
+    handle_connections(fd);
 
     close(fd);
     return;
