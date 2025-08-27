@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include "configuration.h"
 
-#define MAX_BUFF_SIZE   1024
+#define MAX_BUFF_SIZE   9000
 #define BACKEND_PORT    3000
 
 #define ON_SOCK_ERR \

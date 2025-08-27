@@ -20,7 +20,7 @@ atomic_int rps_a = ATOMIC_VAR_INIT(0);
 double cpu_t0;
 
 void *request_per_second() {
-    FILE *fptr = fopen("/tmp/data.txt", "a");
+    FILE *fptr = fopen("data.txt", "a");
     if (!fptr) {
         perror("file pointer");
         return NULL;
@@ -129,6 +129,7 @@ void init_listener(int fd, struct prescal_engine *engine) {
 void handle_connections(int fd) {
     struct sockaddr_in client;
     socklen_t client_size = sizeof(client);
+    printf("Listening...\n");
     while (1) {
         int conn = accept(fd, (struct sockaddr*)&client, &client_size);
         if (conn < 0) {
